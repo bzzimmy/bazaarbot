@@ -8,6 +8,9 @@ from typing import Final
 
 # --- Rate limits ---
 
+# Commands and chat sent faster than about one per second get the connection kicked for spam.
+COMMAND_INTERVAL: Final = 1.1
+
 # Buy orders and sell offers share one global budget: 3 placements in any sliding 80 s window.
 ORDER_PLACEMENTS_PER_WINDOW: Final = 3
 ORDER_PLACEMENT_WINDOW: Final = 80.0

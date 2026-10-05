@@ -12,6 +12,8 @@ from typing import Any
 
 import websockets
 
+from bazaarbot.constants import COMMAND_INTERVAL
+
 Event = dict[str, Any]
 Predicate = Callable[[Event], bool]
 
@@ -31,6 +33,8 @@ class Bridge:
         self._pending: dict[int, asyncio.Future] = {}
         self._waiters: list[tuple[Predicate, asyncio.Future]] = []
         self._listeners: list[Callable[[Event], None]] = []
+        self._command_lock = asyncio.Lock()
+        self._last_command = float("-inf")
 
     async def connect(self) -> Bridge:
         self._ws = await websockets.connect(self.url, max_size=None)
@@ -82,9 +86,11 @@ class Bridge:
         return response.get("result")
 
     async def command(self, command: str) -> None:
+        await self._pace()
         await self.request("command", command=command)
 
     async def chat(self, message: str) -> None:
+        await self._pace()
         await self.request("chat", message=message)
 
     async def click(self, slot: int, button: int = 0, mode: str = "PICKUP", container_id: int | None = None) -> None:
@@ -109,6 +115,13 @@ class Bridge:
         return await self.request("snapshot")
 
     # --- internals ---
+
+    async def _pace(self) -> None:
+        """Space out commands and chat so Hypixel never kicks us for spam."""
+        async with self._command_lock:
+            loop = asyncio.get_running_loop()
+            await asyncio.sleep(max(0.0, self._last_command + COMMAND_INTERVAL - loop.time()))
+            self._last_command = loop.time()
 
     async def _read_loop(self) -> None:
         assert self._ws is not None

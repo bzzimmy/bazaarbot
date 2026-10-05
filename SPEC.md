@@ -73,6 +73,7 @@ Measured live on 2026-10-05, with no artificial delays between actions. The valu
 | Cancelling an order | **About 1 per 3 s** (20 cancels took 59 s) | Clicks sent sooner are silently ignored |
 | Instant buy / instant sell | None hit: 10 buys in 5.6 s, alternating buy/sell at about 1 s each | None |
 | Claiming | None hit: about 70 claims/min in a manual session | Only blocked by inventory space |
+| Commands and chat | **About 1 per second** sustained; the API paces them 1.1 s apart. Menu clicks aren't affected, but each API call opens with a `/bz` command, so calls run at about 1/s at most. | Kicked with `disconnect.spam`, then sent to the lobby or Limbo |
 | Any click | A click sent the instant a menu (re)opens can be ignored | No response; re-click every ~0.25 s until the expected screen or reply arrives |
 | Public Bazaar API | Data refreshes about every 20 s | None |
 
@@ -86,7 +87,7 @@ Measured live on 2026-10-05, with no artificial delays between actions. The valu
 - `[Bazaar] You reached the daily limit of coins you may create orders for on the Bazaar!`
 - `[Bazaar] You reached the daily limit in items value that you may sell on the bazaar!`
 
-**Stop conditions** worth recognising later: `You were spawned in Limbo.` and `[Important] This server will restart soon: Scheduled Reboot`.
+**Stop conditions** worth recognising later: `You were spawned in Limbo.`, `[Important] This server will restart soon: Scheduled Reboot`, and `You are being transferred to the Prototype Lobby for being AFK!` (after ~15 min without movement; menu commands don't count). `/lobby` then `/play sb` gets back into SkyBlock.
 
 ## Out of scope for now
 
