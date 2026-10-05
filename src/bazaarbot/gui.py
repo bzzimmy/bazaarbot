@@ -59,11 +59,11 @@ class Gui:
     def expect_open(self) -> asyncio.Future:
         return self.bridge.expect(lambda e: e["type"].endswith("open_screen"))
 
-    async def open(self, action: Action, retry: bool = True) -> Screen:
+    async def open(self, action: Action, retry: bool = True, timeout: float = SCREEN_TIMEOUT) -> Screen:
         """Run `action` until a new menu opens, then return it once its items have arrived."""
-        event = await self._until(self.expect_open(), action, retry, SCREEN_TIMEOUT, "menu did not open")
+        event = await self._until(self.expect_open(), action, retry, timeout, "menu did not open")
         container_id = event["data"]["containerId"]
-        async with asyncio.timeout(SCREEN_TIMEOUT):
+        async with asyncio.timeout(timeout):
             while container_id not in self._contents:
                 self._contents_arrived.clear()
                 await self._contents_arrived.wait()

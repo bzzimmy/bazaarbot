@@ -6,6 +6,7 @@
 
 Products are Hypixel API IDs. Actions run one at a time (there's a single GUI), each leaves no menu open,
 and the measured rate limits are respected automatically: placing an order waits for a free slot.
+Before each action the player is brought back into SkyBlock if Hypixel moved it (kick, Limbo, AFK).
 """
 
 import asyncio
@@ -20,17 +21,19 @@ from bazaarbot import market, parsing
 from bazaarbot.bridge import DEFAULT_URL, Bridge
 from bazaarbot.gui import Action, Gui, Screen
 from bazaarbot.models import BazaarError, CannotAfford, DailyLimit, NoSpace, Order, OrderCooldown, ProductPage, Receipt
+from bazaarbot.state import GameState
 
 _ERRORS = [(c.ORDER_COOLDOWN, OrderCooldown), (c.DAILY_LIMIT, DailyLimit), (c.CANNOT_AFFORD, CannotAfford), (c.NO_SPACE, NoSpace)]
 _PLACEMENT_MARGIN = 2.0  # seconds on top of the measured window, since we time replies, not the server
 
 
 def _action(method):
-    """Run one Bazaar action at a time and always leave the menu closed."""
+    """Run one Bazaar action at a time, from inside SkyBlock, and always leave the menu closed."""
 
     @functools.wraps(method)
     async def run(self: Bazaar, *args, **kwargs):
         async with self._lock:
+            await self._ready()
             try:
                 return await method(self, *args, **kwargs)
             finally:
@@ -43,14 +46,18 @@ class Bazaar:
     def __init__(self, url: str = DEFAULT_URL) -> None:
         self.bridge = Bridge(url)
         self.gui = Gui(self.bridge)
+        self.state = GameState(self.bridge)
         self.names: dict[str, str] = {}
         self._lock = asyncio.Lock()
         self._placements: deque[float] = deque(maxlen=c.ORDER_PLACEMENTS_PER_WINDOW)
         self._last_manage = 0.0
+        self._last_nudge = 0.0
+        self._nudge = 2.0  # degrees; alternates direction so the view doesn't drift
 
     async def __aenter__(self) -> Bazaar:
         self.names = await market.product_names()
         await self.bridge.connect()
+        self.state.sync(await self.bridge.snapshot())
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -75,7 +82,7 @@ class Bazaar:
     @_action
     async def history(self) -> list[str]:
         """Recent Bazaar activity, newest first, from the Bazaar History button."""
-        main = await self.gui.open(lambda: self.bridge.command("bz"))
+        main = await self._bz()
         text = "\n".join(parsing.lore(main.item("Bazaar History")))
         return [" ".join(entry.split()) for entry in text.split("\n\n") if entry.strip()]
 
@@ -108,7 +115,7 @@ class Bazaar:
 
     @_action
     async def create_buy_order(self, product: str, amount: int, price: float) -> Receipt:
-        await self._wait_for_placement()
+        await self.wait_for_placement()
         page = await self._open_product(product)
         menu = await self.gui.open(self.gui.click(page, "Create Buy Order"))
         menu = await self._sign(self.gui.click(menu, "Custom Amount"), amount)
@@ -120,7 +127,7 @@ class Bazaar:
     @_action
     async def create_sell_offer(self, product: str, price: float) -> Receipt:
         """Offer every unit of `product` in the inventory at `price` each."""
-        await self._wait_for_placement()
+        await self.wait_for_placement()
         page = await self._open_product(product)
         if parsing.product_page(page.items).in_inventory == 0:
             raise BazaarError(f"no {product} in inventory")
@@ -133,14 +140,19 @@ class Bazaar:
     @_action
     async def claim(self, order: Order) -> Receipt:
         menu = await self._open_orders()
-        slot = self._locate(menu, order)
-        return await self._confirm(self.gui.click_slot(menu, slot), c.CLAIMED_ITEMS, c.CLAIMED_COINS, reopens=True)
+        current = self._locate(menu, order)
+        if not current.claimable:
+            raise BazaarError("nothing to claim on this order")
+        return await self._confirm(self.gui.click_slot(menu, current.slot), c.CLAIMED_ITEMS, c.CLAIMED_COINS, reopens=True)
 
     @_action
     async def cancel(self, order: Order) -> Receipt:
         """Cancel an order. Anything waiting to be claimed must be claimed first."""
         menu = await self._open_orders()
-        options = await self.gui.open(self.gui.click_slot(menu, self._locate(menu, order), button=1))
+        current = self._locate(menu, order)
+        if current.claimable:
+            raise BazaarError("claim this order before cancelling it")
+        options = await self.gui.open(self.gui.click_slot(menu, current.slot, button=1))
         await self._wait_for_manage()
         receipt = await self._confirm(self.gui.click(options, "Cancel Order"), c.CANCELLED, reopens=True)
         self._last_manage = time.monotonic()
@@ -150,7 +162,10 @@ class Bazaar:
     async def flip(self, order: Order, price: float) -> Receipt:
         """Turn a filled buy order into a sell offer at `price` each. Doesn't use the placement budget."""
         menu = await self._open_orders()
-        options = await self.gui.open(self.gui.click_slot(menu, self._locate(menu, order), button=1))
+        current = self._locate(menu, order)
+        if current.side != "buy" or not current.is_filled:
+            raise BazaarError("only fully filled buy orders can be flipped")
+        options = await self.gui.open(self.gui.click_slot(menu, current.slot, button=1))
         await self._wait_for_manage()
         await self.gui.open_sign(self.gui.click(options, "Flip Order"))
         receipt = await self._confirm(lambda: self.bridge.sign(f"{price:.1f}"), c.ORDER_FLIPPED, reopens=True, retry=False)
@@ -158,6 +173,30 @@ class Bazaar:
         return receipt
 
     # --- helpers ---
+
+    async def _ready(self) -> None:
+        """Be in SkyBlock with a Booster Cookie, and turn the head now and then so Hypixel doesn't see us as AFK."""
+        if not await self.state.wait_for_skyblock(c.SKYBLOCK_CHECK_TIMEOUT):
+            await self._rejoin()
+        if self.state.cookie_active is False:
+            raise BazaarError("no Booster Cookie active, so /bz is unavailable")
+        if time.monotonic() - self._last_nudge > c.AFK_NUDGE_INTERVAL:
+            self._nudge = -self._nudge
+            await self.bridge.look(yaw=self._nudge)
+            self._last_nudge = time.monotonic()
+
+    async def _rejoin(self) -> None:
+        loaded = self.bridge.expect(
+            lambda e: e["type"].endswith("system_chat") and bool(c.PROFILE_LOADED.search(parsing.plain(e["data"]["content"]["text"])))
+        )
+        for command in ["lobby", "play sb"] if self.state.in_limbo else ["play sb"]:
+            changed = self.bridge.expect(lambda e: e["type"].endswith(("respawn", "login")))
+            await self.bridge.command(command)
+            await asyncio.wait_for(changed, c.REJOIN_TIMEOUT)
+        await asyncio.wait_for(loaded, c.REJOIN_TIMEOUT)
+        if not self.state.in_skyblock:
+            raise BazaarError("could not get back into SkyBlock")
+        await asyncio.sleep(c.JOIN_COMMAND_DELAY)
 
     def name(self, product: str) -> str:
         try:
@@ -167,7 +206,7 @@ class Bazaar:
 
     async def _open_product(self, product: str) -> Screen:
         name = self.name(product)
-        screen = await self.gui.open(lambda: self.bridge.command(f"bz {name}"))
+        screen = await self._bz(name)
         if not screen.has("Buy Instantly"):  # search results
             slot = next((i for i, item in enumerate(screen.items) if item and self._is(item, product)), None)
             if slot is None:
@@ -188,15 +227,19 @@ class Bazaar:
         by_name = {parsing.alnum(name): product for product, name in self.names.items()}
         return [o if o.product else replace(o, product=by_name.get(parsing.alnum(o.name))) for o in parsing.orders(menu.items)]
 
+    async def _bz(self, query: str = "") -> Screen:
+        """Open the Bazaar, optionally searching. Commands aren't re-sent: Hypixel answers them, just slowly at times."""
+        return await self.gui.open(lambda: self.bridge.command(f"bz {query}".strip()), retry=False, timeout=c.COMMAND_TIMEOUT)
+
     async def _open_orders(self) -> Screen:
-        main = await self.gui.open(lambda: self.bridge.command("bz"))
+        main = await self._bz()
         return await self.gui.open(self.gui.click(main, "Manage Orders"))
 
-    def _locate(self, menu: Screen, order: Order) -> int:
-        """Find `order` in a freshly opened Manage Orders menu."""
+    def _locate(self, menu: Screen, order: Order) -> Order:
+        """`order` as it is now in a freshly opened Manage Orders menu."""
         for current in self._orders(menu):
             if (current.side, current.product) == (order.side, order.product) and abs(current.unit_price - order.unit_price) < 0.05:
-                return current.slot
+                return current
         raise BazaarError(f"order not found: {order.side} {order.product} at {order.unit_price}")
 
     async def _sign(self, open_editor: Action, text: object) -> Screen:
@@ -224,7 +267,7 @@ class Bazaar:
                 reopened.cancel()
 
     async def _sell_all(self, button: str) -> list[Receipt]:
-        main = await self.gui.open(lambda: self.bridge.command("bz"))
+        main = await self._bz()
         if not main.has(button) or any("anything to sell" in line for line in parsing.lore(main.item(button))):
             return []
         confirm = await self.gui.open(self.gui.click(main, button))
@@ -232,7 +275,8 @@ class Bazaar:
         rest = [parsing.receipt(line, m) for line in self.gui.more_replies() if (m := c.SOLD.search(line))]
         return [first, *rest]
 
-    async def _wait_for_placement(self) -> None:
+    async def wait_for_placement(self) -> None:
+        """Wait until an order can be placed, e.g. to price it right before placing."""
         if self.placements_available() == 0:
             await asyncio.sleep(self._placements[0] + c.ORDER_PLACEMENT_WINDOW + _PLACEMENT_MARGIN - time.monotonic())
 

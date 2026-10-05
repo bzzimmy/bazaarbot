@@ -8,8 +8,10 @@ from typing import Final
 
 # --- Rate limits ---
 
-# Commands and chat sent faster than about one per second get the connection kicked for spam.
+# Sustained commands and chat faster than about one per second get the connection kicked for spam;
+# short bursts are tolerated, so a few may go at once.
 COMMAND_INTERVAL: Final = 1.1
+COMMAND_BURST: Final = 5
 
 # Buy orders and sell offers share one global budget: 3 placements in any sliding 80 s window.
 ORDER_PLACEMENTS_PER_WINDOW: Final = 3
@@ -22,7 +24,16 @@ ORDER_MANAGE_INTERVAL: Final = 3.0
 CLICK_RETRY_INTERVAL: Final = 0.25
 
 SCREEN_TIMEOUT: Final = 5.0
+COMMAND_TIMEOUT: Final = 15.0  # the first /bz on a freshly joined server takes ~8 s to answer
 REPLY_TIMEOUT: Final = 5.0
+
+# --- Session ---
+
+SKYBLOCK_SIDEBAR: Final = "SBScoreboard"  # sidebar objective only shown in SkyBlock
+SKYBLOCK_CHECK_TIMEOUT: Final = 6.0  # Hypixel refreshes that sidebar at least every ~5 s
+REJOIN_TIMEOUT: Final = 30.0
+JOIN_COMMAND_DELAY: Final = 5.0  # commands only work 4 s after the profile loads on a new server
+AFK_NUDGE_INTERVAL: Final = 300.0  # Hypixel moves players to a lobby after ~15 min without movement
 
 # --- Bazaar limits ---
 
@@ -71,4 +82,5 @@ NO_SPACE: Final = re.compile(r"^\[Bazaar\] You don't have the space required")
 NOTHING_TO_CLAIM: Final = re.compile(r"^\[Bazaar\] There is nothing to claim!")
 
 LIMBO: Final = re.compile(r"^You were spawned in Limbo\.")
+PROFILE_LOADED: Final = re.compile(r"^You are playing on profile:")
 SERVER_REBOOT: Final = re.compile(r"This server will restart soon")

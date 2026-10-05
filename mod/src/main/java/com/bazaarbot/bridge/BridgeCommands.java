@@ -12,9 +12,15 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractSignEditScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.scores.DisplaySlot;
+import net.minecraft.world.scores.Objective;
+import net.minecraft.world.scores.PlayerScoreEntry;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Scoreboard;
 
 /** Primitive actions. Each runs on the client thread and resolves to a JSON result. */
 final class BridgeCommands {
@@ -67,6 +73,13 @@ final class BridgeCommands {
 				mc.gameMode.useItem(player(mc), InteractionHand.MAIN_HAND);
 				yield JsonNull.INSTANCE;
 			}
+			case "look" -> {
+				// Turn the head by a few degrees; the client sends the rotation next tick (counts as activity for AFK checks).
+				LocalPlayer player = player(mc);
+				player.setYRot(player.getYRot() + (req.has("yaw") ? req.get("yaw").getAsFloat() : 0));
+				player.setXRot(Mth.clamp(player.getXRot() + (req.has("pitch") ? req.get("pitch").getAsFloat() : 0), -90, 90));
+				yield JsonNull.INSTANCE;
+			}
 			case "snapshot" -> snapshot(mc);
 			default -> throw new IllegalArgumentException("unknown op: " + op);
 		});
@@ -94,9 +107,29 @@ final class BridgeCommands {
 			out.add("screen", JsonNull.INSTANCE);
 		}
 		out.addProperty("signOpen", mc.gui.screen() instanceof AbstractSignEditScreen);
+		out.add("sidebar", sidebar(mc));
 		out.add("inventory", PacketSerializer.toJson(player.inventoryMenu.getItems()));
 		out.addProperty("selectedSlot", player.getInventory().getSelectedSlot());
 		return out;
+	}
+
+	/** The sidebar as shown on screen: its objective name and each line (team prefix + entry + suffix). */
+	private static JsonElement sidebar(Minecraft mc) {
+		Scoreboard scoreboard = mc.level.getScoreboard();
+		Objective objective = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
+		if (objective == null) {
+			return JsonNull.INSTANCE;
+		}
+		JsonArray lines = new JsonArray();
+		for (PlayerScoreEntry entry : scoreboard.listPlayerScores(objective)) {
+			if (!entry.isHidden()) {
+				lines.add(PlayerTeam.formatNameForTeam(scoreboard.getPlayersTeam(entry.owner()), entry.ownerName()).getString());
+			}
+		}
+		JsonObject sidebar = new JsonObject();
+		sidebar.addProperty("objective", objective.getName());
+		sidebar.add("lines", lines);
+		return sidebar;
 	}
 
 	private static LocalPlayer player(Minecraft mc) {

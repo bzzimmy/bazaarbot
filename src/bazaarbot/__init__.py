@@ -11,6 +11,7 @@ from bazaarbot.models import (
     ProductPage,
     Receipt,
 )
+from bazaarbot.state import GameState
 
 __all__ = [
     "Bazaar",
@@ -19,6 +20,7 @@ __all__ = [
     "BridgeError",
     "CannotAfford",
     "DailyLimit",
+    "GameState",
     "Level",
     "NoSpace",
     "Order",

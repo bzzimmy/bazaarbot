@@ -12,7 +12,7 @@ from typing import Any
 
 import websockets
 
-from bazaarbot.constants import COMMAND_INTERVAL
+from bazaarbot.constants import COMMAND_BURST, COMMAND_INTERVAL
 
 Event = dict[str, Any]
 Predicate = Callable[[Event], bool]
@@ -34,7 +34,8 @@ class Bridge:
         self._waiters: list[tuple[Predicate, asyncio.Future]] = []
         self._listeners: list[Callable[[Event], None]] = []
         self._command_lock = asyncio.Lock()
-        self._last_command = float("-inf")
+        self._command_tokens = float(COMMAND_BURST)
+        self._tokens_at = 0.0
 
     async def connect(self) -> Bridge:
         self._ws = await websockets.connect(self.url, max_size=None)
@@ -111,17 +112,26 @@ class Bridge:
     async def use_item(self) -> None:
         await self.request("use")
 
+    async def look(self, yaw: float = 0.0, pitch: float = 0.0) -> None:
+        """Turn the player's head by the given degrees."""
+        await self.request("look", yaw=yaw, pitch=pitch)
+
     async def snapshot(self) -> dict[str, Any]:
         return await self.request("snapshot")
 
     # --- internals ---
 
     async def _pace(self) -> None:
-        """Space out commands and chat so Hypixel never kicks us for spam."""
+        """Token bucket: up to COMMAND_BURST commands at once, then one per COMMAND_INTERVAL, so Hypixel never kicks us."""
         async with self._command_lock:
             loop = asyncio.get_running_loop()
-            await asyncio.sleep(max(0.0, self._last_command + COMMAND_INTERVAL - loop.time()))
-            self._last_command = loop.time()
+            refill = (loop.time() - self._tokens_at) / COMMAND_INTERVAL if self._tokens_at else COMMAND_BURST
+            self._command_tokens = min(COMMAND_BURST, self._command_tokens + refill)
+            if self._command_tokens < 1:
+                await asyncio.sleep((1 - self._command_tokens) * COMMAND_INTERVAL)
+                self._command_tokens = 1
+            self._command_tokens -= 1
+            self._tokens_at = loop.time()
 
     async def _read_loop(self) -> None:
         assert self._ws is not None
