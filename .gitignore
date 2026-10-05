@@ -3,3 +3,4 @@ captures/
 .venv/
 __pycache__/
 *.db
+data/

@@ -32,7 +32,7 @@ class Bridge:
         self._waiters: list[tuple[Predicate, asyncio.Future]] = []
         self._listeners: list[Callable[[Event], None]] = []
 
-    async def connect(self) -> "Bridge":
+    async def connect(self) -> Bridge:
         self._ws = await websockets.connect(self.url, max_size=None)
         self._reader = asyncio.create_task(self._read_loop())
         return self
@@ -43,7 +43,7 @@ class Bridge:
         if self._reader is not None:
             await self._reader
 
-    async def __aenter__(self) -> "Bridge":
+    async def __aenter__(self) -> Bridge:
         return await self.connect()
 
     async def __aexit__(self, *exc: object) -> None:

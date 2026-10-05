@@ -36,7 +36,7 @@ All Bazaar knowledge lives here, so iterating never requires rebuilding the mod.
 - **Bridge client**: connects to the mod, sends primitives and receives events.
 - **Game state**: purse, inventory, sacks, open screen and Booster Cookie status, built from the event stream.
 - **Bazaar API**: search and product pages; instant buy and sell; sell inventory and sell sacks; create buy orders and sell offers; list, claim, cancel and flip orders; Bazaar history.
-- **Market data**: the public Hypixel Bazaar API (full order books for every product, refreshed about once a minute). It's used for prices; the game client is used for actions and our own orders.
+- **Market data**: the public Hypixel Bazaar API (full order books for every product, refreshed about every 20 s), recorded to `data/market/<date>.jsonl.gz`. It's used for prices; the game client is used for actions and our own orders.
 - **Ledger**: a SQLite record of every trade and purse snapshot, giving profit per strategy.
 - **Strategies**: one file per strategy, built on a small base class and loaded by a runner.
 - **CLI**: a thin Typer layer over the API for manual use and running strategies.
@@ -74,7 +74,7 @@ Measured live on 2026-10-05, with no artificial delays between actions. The valu
 | Instant buy / instant sell | None hit: 10 buys in 5.6 s, alternating buy/sell at about 1 s each | None |
 | Claiming | None hit: about 70 claims/min in a manual session | Only blocked by inventory space |
 | Any click | A click sent the instant a menu (re)opens can be ignored | No response; re-click every ~0.25 s until the expected screen or reply arrives |
-| Public Bazaar API | Data refreshes every 20–60 s | None |
+| Public Bazaar API | Data refreshes about every 20 s | None |
 
 **Implications:**
 - New orders are the scarce resource: about 2 per minute across everything.

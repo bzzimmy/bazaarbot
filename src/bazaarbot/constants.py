@@ -35,7 +35,8 @@ PLAYER_INVENTORY_SLOTS: Final = 36
 # --- Market data ---
 
 BAZAAR_API_URL: Final = "https://api.hypixel.net/v2/skyblock/bazaar"
-BAZAAR_API_REFRESH: Final = 20.0  # data only changes every 20-60 s
+ITEMS_API_URL: Final = "https://api.hypixel.net/v2/resources/skyblock/items"
+BAZAAR_API_REFRESH: Final = 20.0  # data changes about every 20 s
 
 # --- Chat messages (matched against plain text with formatting codes removed) ---
 
