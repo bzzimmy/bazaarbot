@@ -26,7 +26,7 @@ It's built for one account and kept deliberately small. The Bazaar has a limited
 
 A client-side Fabric mod for Minecraft 26.2, running headless through HeadlessMC. It's a thin remote control: it knows nothing about the Bazaar.
 
-- **capture**: records network traffic to `captures/*.jsonl`. This is how we learned the Bazaar's menus, and we'll keep using it to learn new ones. Filtered by default, with `/bbmark` labels and `/bbcapture all|filtered`.
+- **capture**: records network traffic to `captures/*.jsonl`. This is how we learned the Bazaar's menus, and we'll keep using it to learn new ones. Filtered by default, with `/bbmark` labels and `/bbcapture off|filtered|all`.
 - **bridge**: a lean local WebSocket. It streams the same filtered events live (screens, slot contents, chat, sidebar, tab list) and accepts a handful of primitive commands: send a command, click a slot, submit a sign, close the screen, select a hotbar slot, use the held item.
 
 ### The Python package (`src/bazaarbot`)
@@ -55,6 +55,7 @@ All Bazaar knowledge lives here, so iterating never requires rebuilding the mod.
 - A Booster Cookie is required to use `/bz` remotely.
 - There are 28 order slots with Bazaar Flipper II (14 without it).
 - Instant buys quote 4% above the price and refund the difference.
+- Prices are bounded: buy orders at least 50% of the best order, sell offers at most 1.5× the best offer, and 500M coins maximum per unit.
 - Claims fail when the inventory is full.
 - Cancelling is blocked while an order has goods waiting to be claimed.
 - A sell offer always lists every unit of that product in the inventory.
@@ -63,7 +64,7 @@ All Bazaar knowledge lives here, so iterating never requires rebuilding the mod.
 
 ## Rate limits
 
-Measured live on 2026-10-05, with no artificial delays between actions. These values will live in `src/bazaarbot/constants.py`.
+Measured live on 2026-10-05, with no artificial delays between actions. The values live in `src/bazaarbot/constants.py`.
 
 | Action | Observed limit | How it shows up |
 |---|---|---|
