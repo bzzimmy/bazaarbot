@@ -1,5 +1,6 @@
 package com.bazaarbot.capture;
 
+import com.bazaarbot.bridge.BridgeServer;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -76,8 +77,11 @@ public final class PacketCapture {
 
 	private static final BlockingQueue<String> queue = new LinkedBlockingQueue<>();
 	private static final AtomicLong seq = new AtomicLong();
+	/** What gets written to the capture file. The bridge always gets the filtered stream. */
+	public enum Mode { OFF, FILTERED, ALL }
+
 	private static volatile boolean running;
-	private static volatile boolean captureAll;
+	private static volatile Mode mode = Mode.FILTERED;
 
 	private PacketCapture() {
 	}
@@ -110,25 +114,23 @@ public final class PacketCapture {
 		LOGGER.info("Capturing packets to {}", file.toAbsolutePath());
 	}
 
+	/** Each packet is serialized once and fanned out to the capture file and the bridge. */
 	public static void record(String dir, Packet<?> packet) {
-		if (!running) {
+		if (packet instanceof BundlePacket<?> bundle) {
+			// Hypixel bundles menu and team updates together with entity spam, so filter per sub-packet.
+			for (Packet<?> sub : bundle.subPackets()) {
+				record(dir, sub);
+			}
 			return;
 		}
-		if (!captureAll) {
-			if (packet instanceof BundlePacket<?> bundle) {
-				// Hypixel bundles menu and team updates together with entity spam, so filter per sub-packet.
-				for (Packet<?> sub : bundle.subPackets()) {
-					record(dir, sub);
-				}
-				return;
-			}
-			if (!KEEP.contains(packet.type().toString())) {
-				return;
-			}
-			if (packet instanceof ClientboundSystemChatPacket chat && chat.overlay()) {
-				return; // action bar, updates several times a second
-			}
+		boolean wanted = KEEP.contains(packet.type().toString())
+			&& !(packet instanceof ClientboundSystemChatPacket chat && chat.overlay()); // action bar spam
+		boolean toFile = running && (mode == Mode.ALL || (mode == Mode.FILTERED && wanted));
+		boolean toBridge = wanted && BridgeServer.hasClients();
+		if (!toFile && !toBridge) {
+			return;
 		}
+
 		JsonObject line = header(dir);
 		try {
 			line.addProperty("type", packet.type().toString());
@@ -139,12 +141,21 @@ public final class PacketCapture {
 			line.addProperty("class", packet.getClass().getName());
 			line.addProperty("error", t.toString());
 		}
-		enqueue(line);
+		String json = encode(line);
+		if (json == null) {
+			return;
+		}
+		if (toFile) {
+			queue.add(json);
+		}
+		if (toBridge) {
+			BridgeServer.broadcast(json);
+		}
 	}
 
-	public static void setCaptureAll(boolean all) {
-		captureAll = all;
-		mark(all ? "capture mode: all" : "capture mode: filtered");
+	public static void setMode(Mode newMode) {
+		mark("capture mode: " + newMode.name().toLowerCase());
+		mode = newMode;
 	}
 
 	public static void mark(String text) {
@@ -153,7 +164,10 @@ public final class PacketCapture {
 		}
 		JsonObject line = header("mark");
 		line.add("text", new JsonPrimitive(text));
-		enqueue(line);
+		String json = encode(line);
+		if (json != null) {
+			queue.add(json);
+		}
 	}
 
 	private static JsonObject header(String dir) {
@@ -164,11 +178,12 @@ public final class PacketCapture {
 		return line;
 	}
 
-	private static void enqueue(JsonObject line) {
+	private static String encode(JsonObject line) {
 		try {
-			queue.add(GSON.toJson(line));
+			return GSON.toJson(line);
 		} catch (Throwable t) {
 			LOGGER.warn("Failed to encode capture line", t);
+			return null;
 		}
 	}
 

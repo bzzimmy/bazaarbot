@@ -1,2 +1,3 @@
-def hello() -> str:
-    return "Hello from bazaarbot!"
+from bazaarbot.bridge import Bridge, BridgeError
+
+__all__ = ["Bridge", "BridgeError"]

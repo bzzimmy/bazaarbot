@@ -53,7 +53,7 @@ import net.minecraft.world.level.material.Fluid;
  * everything else falls back to its fields or toString(). Large primitive arrays such as
  * chunk data are summarized instead of dumped.
  */
-final class PacketSerializer {
+public final class PacketSerializer {
 	private static final int MAX_DEPTH = 24;
 	private static final int MAX_ELEMENTS = 4096;
 	private static final int MAX_INLINE_ARRAY = 64;
@@ -69,6 +69,11 @@ final class PacketSerializer {
 
 	JsonElement serializePacketBody(Packet<?> packet) {
 		return fields(packet, 0);
+	}
+
+	/** Serializes any game value (items, components, lists of them...) the same way packets are. */
+	public static JsonElement toJson(Object o) {
+		return new PacketSerializer().value(o, 0);
 	}
 
 	private JsonElement value(Object o, int depth) {

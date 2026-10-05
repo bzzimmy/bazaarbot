@@ -3,7 +3,8 @@
 	"package": "com.bazaarbot.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
-		"ConnectionMixin"
+		"ConnectionMixin",
+		"SignEditScreenAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1
