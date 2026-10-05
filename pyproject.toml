@@ -1,0 +1,14 @@
+[project]
+name = "bazaarbot"
+version = "0.1.0"
+description = "Python API and CLI for the Hypixel SkyBlock Bazaar, driven through a headless Minecraft client"
+readme = "README.md"
+authors = [
+    { name = "bzzimmy", email = "kernelrocks@proton.me" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
