@@ -42,6 +42,7 @@ MAX_UNIT_PRICE: Final = 500_000_000
 BUY_ORDER_MIN_PRICE_RATIO: Final = 0.5  # of the best buy order
 SELL_OFFER_MAX_PRICE_RATIO: Final = 1.5  # of the best sell offer
 INSTANT_BUY_QUOTE_MARGIN: Final = 0.04  # quoted above price, difference refunded
+SELL_TAX: Final = 0.01125  # measured on this account (Bazaar Flipper II); Hypixel's "Sold ..." amounts are before tax
 
 # Every container menu ends with the player's 36 inventory slots.
 PLAYER_INVENTORY_SLOTS: Final = 36

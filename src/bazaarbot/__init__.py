@@ -12,6 +12,7 @@ from bazaarbot.models import (
     Receipt,
 )
 from bazaarbot.state import GameState
+from bazaarbot.strategy import Strategy
 
 __all__ = [
     "Bazaar",
@@ -27,4 +28,5 @@ __all__ = [
     "OrderCooldown",
     "ProductPage",
     "Receipt",
+    "Strategy",
 ]

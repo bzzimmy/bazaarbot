@@ -4,3 +4,4 @@ captures/
 __pycache__/
 *.db
 data/
+strategies/
