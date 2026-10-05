@@ -10,6 +10,7 @@ from bazaarbot.models import Level, Order, ProductPage, Receipt
 _FORMATTING = re.compile("§.")
 _LEVEL = re.compile(r"^- ([\d,.]+) coins each \| ([\d,]+)x (?:in|from) ([\d,]+) (?:order|offer)s?$")
 _SUFFIXES = {"k": 1e3, "M": 1e6, "B": 1e9}
+_HELD = re.compile(r"^(?:Inventory: ([\d,]+) items?|Your .+: ([\d,]+))$")  # items, or essences ("Your Undead Essence: 7,184")
 
 
 def plain(text: str) -> str:
@@ -76,14 +77,13 @@ def derived_name(product: str) -> str:
 def product_page(items: list[dict | None]) -> ProductPage:
     """Parse a product page (the menu with Buy Instantly / Create Buy Order / ...)."""
     centre = items[13]
-    inventory = next((line for line in lore(items[find(items, "Sell Instantly")]) if line.startswith("Inventory:")), "")
-    held = re.search(r"([\d,]+) items?", inventory)
+    held = next((m for line in lore(items[find(items, "Sell Instantly")]) if (m := _HELD.match(line))), None)
     return ProductPage(
         product=item_id(centre),
         name=name(centre),
         buy_orders=_levels(lore(items[find(items, "Create Buy Order")])),
         sell_offers=_levels(lore(items[find(items, "Create Sell Offer")])),
-        in_inventory=int(number(held.group(1))) if held else 0,
+        in_inventory=int(number(held.group(1) or held.group(2))) if held else 0,
     )
 
 
@@ -169,13 +169,13 @@ def _order(item: dict, slot: int) -> Order | None:
     if not (amount and price):
         return None
     total = int(number(amount.group(1)))
-    filled = re.search(r"Filled: ([\d,.]+[kMB]?)/\S+ (\d+)%", text)
+    filled = re.search(r"Filled: ([\d,.]+[kMB]?)/\S+ \(?([\d.]+)%", text)  # "1/1 100%!" or "661/1.9k (34.2%)"
     return Order(
         side="buy" if side == "BUY" else "sell",
         product=item_id(item),
         name=name(item).partition(" ")[2],
         amount=total,
-        filled=0 if not filled else total if filled.group(2) == "100" else int(number(filled.group(1))),
+        filled=0 if not filled else total if float(filled.group(2)) >= 100 else int(number(filled.group(1))),
         unit_price=number(price.group(1)),
         claimable="to claim!" in text,
         slot=slot,
