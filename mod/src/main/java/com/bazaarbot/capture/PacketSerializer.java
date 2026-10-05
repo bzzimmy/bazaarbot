@@ -27,6 +27,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.core.Holder;
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.Tag;
@@ -37,6 +38,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemLore;
@@ -95,6 +97,8 @@ final class PacketSerializer {
 		if (o instanceof Fluid f) return registryId(BuiltInRegistries.FLUID.getKey(f), o);
 		if (o instanceof EntityType<?> e) return registryId(BuiltInRegistries.ENTITY_TYPE.getKey(e), o);
 		if (o instanceof BlockEntityType<?> e) return registryId(BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(e), o);
+		if (o instanceof MenuType<?> m) return registryId(BuiltInRegistries.MENU.getKey(m), o);
+		if (o instanceof DataComponentType<?> t) return registryId(BuiltInRegistries.DATA_COMPONENT_TYPE.getKey(t), o);
 		if (o instanceof Component c) return component(c);
 		if (o instanceof ItemStack stack) return item(stack);
 		if (o instanceof Holder<?> holder) {

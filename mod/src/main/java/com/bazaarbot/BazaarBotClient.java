@@ -12,16 +12,29 @@ public class BazaarBotClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		PacketCapture.start();
 
-		// /bbmark <text> writes a label into the capture so sessions are easy to navigate.
-		ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) -> dispatcher.register(
-			ClientCommands.literal("bbmark")
+		ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) -> {
+			// /bbmark <text> writes a label into the capture so sessions are easy to navigate.
+			dispatcher.register(ClientCommands.literal("bbmark")
 				.then(ClientCommands.argument("text", StringArgumentType.greedyString())
 					.executes(ctx -> {
 						String text = StringArgumentType.getString(ctx, "text");
 						PacketCapture.mark(text);
 						ctx.getSource().sendFeedback(Component.literal("[bazaarbot] marked: " + text));
 						return 1;
-					}))
-		));
+					})));
+
+			// /bbcapture all|filtered switches between dumping every packet and only the useful ones.
+			dispatcher.register(ClientCommands.literal("bbcapture")
+				.then(ClientCommands.literal("all").executes(ctx -> {
+					PacketCapture.setCaptureAll(true);
+					ctx.getSource().sendFeedback(Component.literal("[bazaarbot] capturing all packets"));
+					return 1;
+				}))
+				.then(ClientCommands.literal("filtered").executes(ctx -> {
+					PacketCapture.setCaptureAll(false);
+					ctx.getSource().sendFeedback(Component.literal("[bazaarbot] capturing filtered packets"));
+					return 1;
+				})));
+		});
 	}
 }

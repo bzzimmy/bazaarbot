@@ -13,11 +13,14 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.network.protocol.BundlePacket;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,9 +38,44 @@ public final class PacketCapture {
 		.create();
 	private static final String STOP = new String("<stop>");
 
+	/** Packets kept in filtered mode: menus, signs, chat, sidebar, tab footer and connection state. */
+	private static final Set<String> KEEP = Set.of(
+		"clientbound/minecraft:open_screen",
+		"clientbound/minecraft:container_set_content",
+		"clientbound/minecraft:container_set_slot",
+		"clientbound/minecraft:container_set_data",
+		"clientbound/minecraft:container_close",
+		"clientbound/minecraft:set_cursor_item",
+		"clientbound/minecraft:open_sign_editor",
+		"clientbound/minecraft:system_chat",
+		"clientbound/minecraft:player_chat",
+		"clientbound/minecraft:disguised_chat",
+		"clientbound/minecraft:set_objective",
+		"clientbound/minecraft:set_display_objective",
+		"clientbound/minecraft:set_score",
+		"clientbound/minecraft:reset_score",
+		"clientbound/minecraft:set_player_team",
+		"clientbound/minecraft:tab_list",
+		"clientbound/minecraft:set_title_text",
+		"clientbound/minecraft:set_subtitle_text",
+		"clientbound/minecraft:login",
+		"clientbound/minecraft:respawn",
+		"clientbound/minecraft:start_configuration",
+		"clientbound/minecraft:disconnect",
+		"clientbound/minecraft:custom_payload",
+		"serverbound/minecraft:chat",
+		"serverbound/minecraft:chat_command",
+		"serverbound/minecraft:chat_command_signed",
+		"serverbound/minecraft:container_click",
+		"serverbound/minecraft:container_button_click",
+		"serverbound/minecraft:container_close",
+		"serverbound/minecraft:sign_update"
+	);
+
 	private static final BlockingQueue<String> queue = new LinkedBlockingQueue<>();
 	private static final AtomicLong seq = new AtomicLong();
 	private static volatile boolean running;
+	private static volatile boolean captureAll;
 
 	private PacketCapture() {
 	}
@@ -74,6 +112,21 @@ public final class PacketCapture {
 		if (!running) {
 			return;
 		}
+		if (!captureAll) {
+			if (packet instanceof BundlePacket<?> bundle) {
+				// Hypixel bundles menu and team updates together with entity spam, so filter per sub-packet.
+				for (Packet<?> sub : bundle.subPackets()) {
+					record(dir, sub);
+				}
+				return;
+			}
+			if (!KEEP.contains(packet.type().toString())) {
+				return;
+			}
+			if (packet instanceof ClientboundSystemChatPacket chat && chat.overlay()) {
+				return; // action bar, updates several times a second
+			}
+		}
 		JsonObject line = header(dir);
 		try {
 			line.addProperty("type", packet.type().toString());
@@ -85,6 +138,11 @@ public final class PacketCapture {
 			line.addProperty("error", t.toString());
 		}
 		enqueue(line);
+	}
+
+	public static void setCaptureAll(boolean all) {
+		captureAll = all;
+		mark(all ? "capture mode: all" : "capture mode: filtered");
 	}
 
 	public static void mark(String text) {
