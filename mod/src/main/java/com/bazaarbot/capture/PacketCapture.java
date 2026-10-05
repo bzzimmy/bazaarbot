@@ -69,7 +69,9 @@ public final class PacketCapture {
 		"serverbound/minecraft:container_click",
 		"serverbound/minecraft:container_button_click",
 		"serverbound/minecraft:container_close",
-		"serverbound/minecraft:sign_update"
+		"serverbound/minecraft:sign_update",
+		"serverbound/minecraft:use_item",
+		"serverbound/minecraft:set_carried_item"
 	);
 
 	private static final BlockingQueue<String> queue = new LinkedBlockingQueue<>();
