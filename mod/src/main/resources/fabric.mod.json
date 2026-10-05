@@ -1,0 +1,23 @@
+{
+	"schemaVersion": 1,
+	"id": "bazaarbot",
+	"version": "${version}",
+	"name": "BazaarBot",
+	"description": "Captures all Minecraft network traffic to JSONL for building a Hypixel Bazaar bot.",
+	"license": "UNLICENSED",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.bazaarbot.BazaarBotClient"
+		]
+	},
+	"mixins": [
+		"bazaarbot.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

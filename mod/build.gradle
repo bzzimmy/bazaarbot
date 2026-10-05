@@ -1,0 +1,33 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+	def version = project.version
+	// Captures default to <repo>/captures, next to this mod directory.
+	def captureDir = new File(rootProject.projectDir.parentFile, "captures").absolutePath
+	inputs.property "version", version
+	inputs.property "captureDir", captureDir
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+	filesMatching("bazaarbot.properties") {
+		expand "captureDir": captureDir
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
