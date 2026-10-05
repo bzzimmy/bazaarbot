@@ -7,6 +7,7 @@ requests ({"id", "op", ...}) with {"id", "ok", "result"|"error"}.
 import asyncio
 import itertools
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -18,6 +19,8 @@ Event = dict[str, Any]
 Predicate = Callable[[Event], bool]
 
 DEFAULT_URL = "ws://127.0.0.1:7777"
+
+log = logging.getLogger("bazaarbot")
 
 
 class BridgeError(Exception):
@@ -155,7 +158,10 @@ class Bridge:
 
     def _dispatch(self, event: Event) -> None:
         for callback in self._listeners:
-            callback(event)
+            try:
+                callback(event)
+            except Exception:
+                log.exception("event listener failed")  # never let one listener take the connection down
         remaining = []
         for predicate, future in self._waiters:
             if future.done():

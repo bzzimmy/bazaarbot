@@ -9,7 +9,7 @@ settings, and can be overridden when it's loaded:
         async def tick(self, bz, market):
             ...
 
-    uv run bazaarbot-run strategies/example.py amount=1
+    uv run bazaarbot-run strategies/example.py amount=1 duration=900
 """
 
 import ast
@@ -30,6 +30,7 @@ from bazaarbot.models import BazaarError
 
 class Strategy:
     interval: float = BAZAAR_API_REFRESH  # seconds between ticks
+    duration: float = 0  # seconds to run before stopping on its own; 0 runs until Ctrl+C
 
     def __init__(self, **settings: object) -> None:
         for key, value in settings.items():
@@ -46,7 +47,7 @@ class Strategy:
         raise NotImplementedError
 
     async def stop(self, bz: Bazaar) -> None:
-        """Called once when the run ends, including on Ctrl+C."""
+        """Called once when the run ends (duration reached or Ctrl+C): the place to clean up."""
 
 
 def load(path: str | Path, **settings: object) -> Strategy:
@@ -61,18 +62,21 @@ def load(path: str | Path, **settings: object) -> Strategy:
 
 
 async def run(strategy: Strategy) -> None:
-    """Run a strategy until cancelled. A failed tick is logged and the next one runs as normal."""
+    """Run a strategy for its duration or until cancelled. A failed tick is logged and the next one runs as normal."""
     log = strategy.log
+    loop = asyncio.get_running_loop()
+    end = loop.time() + strategy.duration if strategy.duration else float("inf")
     async with Bazaar() as bz:
         await strategy.start(bz)
         try:
-            while True:
-                started = asyncio.get_running_loop().time()
+            while loop.time() < end:
+                started = loop.time()
                 try:
                     await strategy.tick(bz, await market_api.fetch())
                 except (BazaarError, BridgeError, TimeoutError, httpx.HTTPError) as e:
                     log.warning("tick failed: %r", e)
-                await asyncio.sleep(max(0.0, strategy.interval - (asyncio.get_running_loop().time() - started)))
+                await asyncio.sleep(max(0.0, min(started + strategy.interval, end) - loop.time()))
+            log.info("duration reached, stopping")
         finally:
             await strategy.stop(bz)
 

@@ -11,9 +11,11 @@ Before each action the player is brought back into SkyBlock if Hypixel moved it 
 
 import asyncio
 import functools
+import logging
 import re
 import time
 from collections import deque
+from collections.abc import Collection
 from dataclasses import replace
 
 from bazaarbot import constants as c
@@ -26,6 +28,8 @@ from bazaarbot.state import GameState
 _ERRORS = [(c.ORDER_COOLDOWN, OrderCooldown), (c.DAILY_LIMIT, DailyLimit), (c.CANNOT_AFFORD, CannotAfford), (c.NO_SPACE, NoSpace)]
 _PLACEMENT_MARGIN = 2.0  # seconds on top of the measured window, since we time replies, not the server
 
+log = logging.getLogger("bazaarbot")
+
 
 def _action(method):
     """Run one Bazaar action at a time, from inside SkyBlock, and always leave the menu closed."""
@@ -36,6 +40,8 @@ def _action(method):
             await self._ready()
             try:
                 return await method(self, *args, **kwargs)
+            except TimeoutError as e:
+                raise BazaarError(await self._why_no_response(method.__name__)) from e
             finally:
                 await self.bridge.close_screen()
 
@@ -172,6 +178,24 @@ class Bazaar:
         self._last_manage = time.monotonic()
         return receipt
 
+    async def clear_orders(self, products: Collection[str] | None = None) -> list[Receipt]:
+        """Claim everything claimable and cancel the rest, for all orders or only these products.
+
+        Keeps going past orders Hypixel refuses (logged), so one problem doesn't block the rest.
+        """
+        receipts: list[Receipt] = []
+        while orders := [o for o in await self.orders() if products is None or o.product in products]:
+            cleared = 0
+            for order in orders:
+                try:
+                    receipts.append(await (self.claim(order) if order.claimable else self.cancel(order)))
+                    cleared += 1
+                except BazaarError as e:
+                    log.warning("could not clear %s %s order: %s", order.side, order.product, e)
+            if not cleared:
+                break
+        return receipts
+
     # --- helpers ---
 
     async def _ready(self) -> None:
@@ -184,6 +208,15 @@ class Bazaar:
             self._nudge = -self._nudge
             await self.bridge.look(yaw=self._nudge)
             self._last_nudge = time.monotonic()
+
+    async def _why_no_response(self, action: str) -> str:
+        """Explain a timed-out action, e.g. Hypixel's warning screen for selling far below the 7-day average."""
+        screen = (await self.bridge.snapshot())["screen"]
+        warning = next((item for item in (screen or {}).get("items", []) if item and parsing.name(item) == "WARNING"), None)
+        if warning:
+            reason = next((line for line in parsing.lore(warning) if "this value" in line), "price far from its average")
+            return f"{action}: Hypixel asks to confirm a price far from the 7-day average ({reason.strip()})"
+        return f"{action}: no response from Hypixel"
 
     async def _rejoin(self) -> None:
         loaded = self.bridge.expect(
