@@ -54,11 +54,38 @@ All Bazaar knowledge lives here, so iterating never requires rebuilding the mod.
 
 - A Booster Cookie is required to use `/bz` remotely.
 - There are 28 order slots with Bazaar Flipper II (14 without it).
-- There's a daily coin limit. Its size is unclear, so the API reports it as an error rather than predicting it.
 - Instant buys quote 4% above the price and refund the difference.
 - Claims fail when the inventory is full.
 - Cancelling is blocked while an order has goods waiting to be claimed.
+- A sell offer always lists every unit of that product in the inventory.
+- Preset amount buttons depend on stack size ("Buy only one!" for unstackable items, "Buy a stack!" otherwise), so the API uses "Custom Amount" with the sign.
 - Sell-side tax depends on account upgrades.
+
+## Rate limits
+
+Measured live on 2026-10-05, with no artificial delays between actions. These values will live in `src/bazaarbot/constants.py`.
+
+| Action | Observed limit | How it shows up |
+|---|---|---|
+| Placing orders (buy orders and sell offers) | **3 in any sliding 80 s window**, shared across all products. Failed attempts don't count or extend it. Best case is a burst of 3, or 1 every ~27 s (2.25/min). | `[Bazaar] Placing orders is on cooldown for up to 1 minute!` |
+| Flip Order | **Not counted** in the placement budget (it worked with the budget full). About **1 per 3 s**. | Clicks sent sooner are silently ignored |
+| Cancelling an order | **About 1 per 3 s** (20 cancels took 59 s) | Clicks sent sooner are silently ignored |
+| Instant buy / instant sell | None hit: 10 buys in 5.6 s, alternating buy/sell at about 1 s each | None |
+| Claiming | None hit: about 70 claims/min in a manual session | Only blocked by inventory space |
+| Any click | A click sent the instant a menu (re)opens can be ignored | No response; re-click every ~0.25 s until the expected screen or reply arrives |
+| Public Bazaar API | Data refreshes every 20–60 s | None |
+
+**Implications:**
+- New orders are the scarce resource: about 2 per minute across everything.
+- Repricing is a cancel (about 3 s) plus a placement, so it spends that same budget.
+- Flipping a filled buy order into a sell offer is free in budget terms, which makes buy order → flip the efficient cycle.
+
+**Daily limits** exist separately for instant buying, order creation and selling. Their size is undocumented (community reports range from 10B to 15B and higher). Each is reported as an error when hit:
+- `[Bazaar] You reached the daily limit of coins you may spend on the Bazaar!` (observed, from an oversized instant buy)
+- `[Bazaar] You reached the daily limit of coins you may create orders for on the Bazaar!`
+- `[Bazaar] You reached the daily limit in items value that you may sell on the bazaar!`
+
+**Stop conditions** worth recognising later: `You were spawned in Limbo.` and `[Important] This server will restart soon: Scheduled Reboot`.
 
 ## Out of scope for now
 
