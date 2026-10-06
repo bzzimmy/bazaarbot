@@ -58,6 +58,7 @@ All Bazaar knowledge lives here, so iterating never requires rebuilding the mod.
 - Prices are bounded: buy orders at least 50% of the best order, sell offers at most 1.5× the best offer, and 500M coins maximum per unit.
 - Amounts are bounded per order or instant buy ("Buy up to 71,680x", 256x for enchantments); Hypixel silently ignores larger ones.
 - A filled buy order can't be flipped below its own buy price.
+- Instant sells far below the 7-day average open a WARNING screen that can only be confirmed after a short countdown (and not again for 5 minutes). The API refuses them with `PriceWarning` unless asked to confirm.
 - Some products are locked per account, e.g. Garden mutations until they're analysed.
 - Claims fail when the inventory is full.
 - Cancelling is blocked while an order has goods waiting to be claimed.

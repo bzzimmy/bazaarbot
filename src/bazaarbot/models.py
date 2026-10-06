@@ -80,3 +80,7 @@ class CannotAfford(BazaarError):
 
 class NoSpace(BazaarError):
     pass
+
+
+class PriceWarning(BazaarError):
+    """Hypixel asks to confirm an instant sale far below the 7-day average."""

@@ -9,6 +9,7 @@ from bazaarbot.models import (
     NoSpace,
     Order,
     OrderCooldown,
+    PriceWarning,
     ProductPage,
     Receipt,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "NoSpace",
     "Order",
     "OrderCooldown",
+    "PriceWarning",
     "ProductPage",
     "Receipt",
     "Strategy",

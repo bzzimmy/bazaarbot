@@ -24,7 +24,7 @@ from bazaarbot import market, parsing
 from bazaarbot.bridge import DEFAULT_URL, Bridge
 from bazaarbot.gui import Action, Gui, Screen
 from bazaarbot.ledger import Ledger
-from bazaarbot.models import BazaarError, CannotAfford, DailyLimit, NoSpace, Order, OrderCooldown, ProductPage, Receipt
+from bazaarbot.models import BazaarError, CannotAfford, DailyLimit, NoSpace, Order, OrderCooldown, PriceWarning, ProductPage, Receipt
 from bazaarbot.state import GameState
 
 _ERRORS = [(c.ORDER_COOLDOWN, OrderCooldown), (c.DAILY_LIMIT, DailyLimit), (c.CANNOT_AFFORD, CannotAfford), (c.NO_SPACE, NoSpace)]
@@ -111,12 +111,25 @@ class Bazaar:
         return await self._confirm(self.gui.click(confirm, "Custom Amount"), c.BOUGHT, reopens=True)
 
     @_action
-    async def instant_sell(self, product: str) -> Receipt:
-        """Sell every unit of `product` in the inventory to the best buy orders."""
+    async def instant_sell(self, product: str, confirm_warning: bool = False) -> Receipt:
+        """Sell every unit of `product` in the inventory to the best buy orders.
+
+        Far below the 7-day average, Hypixel asks to confirm the sale first: that raises PriceWarning,
+        unless `confirm_warning` is set to sell anyway.
+        """
         page = await self._open_product(product)
         if parsing.product_page(page.items).in_inventory == 0:
             raise BazaarError(f"no {product} in inventory")
-        return await self._confirm(self.gui.click(page, "Sell Instantly"), c.SOLD, reopens=True)
+        try:
+            return await self._confirm(self.gui.click(page, "Sell Instantly"), c.SOLD, reopens=True)
+        except TimeoutError:
+            if not (warning := await self._price_warning()):
+                raise
+            screen, reason = warning
+            if not confirm_warning:
+                raise PriceWarning(f"instant_sell: Hypixel asks to confirm a price far below the 7-day average ({reason})") from None
+            # Clicks are ignored until the warning's countdown ends, and the sale doesn't reopen a menu.
+            return await self._confirm(self.gui.click(screen, "WARNING"), c.SOLD)
 
     @_action
     async def sell_inventory(self) -> list[Receipt]:
@@ -218,12 +231,18 @@ class Bazaar:
 
     async def _why_no_response(self, action: str) -> str:
         """Explain a timed-out action, e.g. Hypixel's warning screen for selling far below the 7-day average."""
+        if warning := await self._price_warning():
+            return f"{action}: Hypixel asks to confirm a price far below the 7-day average ({warning[1]})"
+        return f"{action}: no response from Hypixel"
+
+    async def _price_warning(self) -> tuple[Screen, str] | None:
+        """The open warning screen for selling far below the 7-day average, if any, and its reason."""
         screen = (await self.bridge.snapshot())["screen"]
         warning = next((item for item in (screen or {}).get("items", []) if item and parsing.name(item) == "WARNING"), None)
-        if warning:
-            reason = next((line for line in parsing.lore(warning) if "this value" in line), "price far from its average")
-            return f"{action}: Hypixel asks to confirm a price far from the 7-day average ({reason.strip()})"
-        return f"{action}: no response from Hypixel"
+        if not warning:
+            return None
+        reason = next((line.strip() for line in parsing.lore(warning) if "this value" in line), "price far from its average")
+        return Screen(self.gui, screen["containerId"], parsing.plain(screen["title"]["text"])), reason
 
     async def _wait_for_restart(self) -> None:
         """Hypixel refuses commands on a server about to restart, then moves everyone off it."""
