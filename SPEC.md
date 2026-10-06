@@ -56,6 +56,9 @@ All Bazaar knowledge lives here, so iterating never requires rebuilding the mod.
 - There are 28 order slots with Bazaar Flipper II (14 without it).
 - Instant buys quote 4% above the price and refund the difference.
 - Prices are bounded: buy orders at least 50% of the best order, sell offers at most 1.5× the best offer, and 500M coins maximum per unit.
+- Amounts are bounded per order or instant buy ("Buy up to 71,680x", 256x for enchantments); Hypixel silently ignores larger ones.
+- A filled buy order can't be flipped below its own buy price.
+- Some products are locked per account, e.g. Garden mutations until they're analysed.
 - Claims fail when the inventory is full.
 - Cancelling is blocked while an order has goods waiting to be claimed.
 - A sell offer always lists every unit of that product in the inventory.
@@ -87,7 +90,9 @@ Measured live on 2026-10-05, with no artificial delays between actions. The valu
 - `[Bazaar] You reached the daily limit of coins you may create orders for on the Bazaar!`
 - `[Bazaar] You reached the daily limit in items value that you may sell on the bazaar!`
 
-**Stop conditions** worth recognising later: `You were spawned in Limbo.`, `[Important] This server will restart soon: Scheduled Reboot`, and `You are being transferred to the Prototype Lobby for being AFK!` (after ~15 min without movement; menu commands don't count). `/lobby` then `/play sb` gets back into SkyBlock.
+**Interruptions**, handled before each action:
+- `You were spawned in Limbo.`, kicks, and `You are being transferred to the Prototype Lobby for being AFK!` (after ~15 min without movement; menu commands don't count). `/lobby` then `/play sb` gets back into SkyBlock, and a small head turn every 5 minutes avoids the AFK transfer.
+- `[Important] This server will restart soon: Scheduled Reboot`: commands are refused (`You can't use this when the server is about to restart!`) until Hypixel moves everyone to their island about a minute later, so actions wait for that move.
 
 ## Out of scope for now
 

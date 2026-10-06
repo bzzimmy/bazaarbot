@@ -1,4 +1,4 @@
-"""What the player can see outside menus: purse, Booster Cookie, and whether we're in SkyBlock.
+"""What the player can see outside menus: purse, Booster Cookie, whether we're in SkyBlock, and server restarts.
 
 Built purely from bridge events, so it's always current and never has to ask the game.
 """
@@ -8,7 +8,7 @@ import re
 
 from bazaarbot import parsing
 from bazaarbot.bridge import Bridge, Event
-from bazaarbot.constants import LIMBO, SKYBLOCK_SIDEBAR
+from bazaarbot.constants import LIMBO, SERVER_REBOOT, SKYBLOCK_SIDEBAR
 
 _PURSE = re.compile(r"^(?:Purse|Piggy): ([\d,.]+)")
 
@@ -18,6 +18,7 @@ class GameState:
         self.cookie_active: bool | None = None  # None until the tab list has shown it
         self.cookie_left: str | None = None  # as Hypixel shows it, e.g. "3 days, 4 hours"
         self.in_limbo = False
+        self.restarting = False  # the server announced a restart; commands are refused until Hypixel moves us
         self._teams: dict[str, str] = {}  # sidebar lines are scoreboard teams: name -> prefix + suffix
         self._synced_lines: list[str] = []  # sidebar at connect, until live team updates replace it
         self._skyblock = asyncio.Event()
@@ -57,6 +58,7 @@ class GameState:
             self._teams.clear()
             self._synced_lines = []
             self.in_limbo = False
+            self.restarting = False
         elif kind.endswith(("set_objective", "set_display_objective")):
             if data.get("objectiveName") == SKYBLOCK_SIDEBAR:
                 self._skyblock.set()
@@ -71,5 +73,9 @@ class GameState:
                 left = lines[lines.index("Cookie Buff") + 1]
                 self.cookie_active = not left.startswith("Not active")
                 self.cookie_left = left if self.cookie_active else None
-        elif kind.endswith("system_chat") and LIMBO.search(parsing.plain(data["content"]["text"])):
-            self.in_limbo = True
+        elif kind.endswith("system_chat"):
+            text = parsing.plain(data["content"]["text"])
+            if LIMBO.search(text):
+                self.in_limbo = True
+            elif SERVER_REBOOT.search(text):
+                self.restarting = True

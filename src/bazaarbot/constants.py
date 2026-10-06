@@ -33,6 +33,7 @@ SKYBLOCK_SIDEBAR: Final = "SBScoreboard"  # sidebar objective only shown in SkyB
 SKYBLOCK_CHECK_TIMEOUT: Final = 6.0  # Hypixel refreshes that sidebar at least every ~5 s
 REJOIN_TIMEOUT: Final = 30.0
 JOIN_COMMAND_DELAY: Final = 5.0  # commands only work 4 s after the profile loads on a new server
+RESTART_TIMEOUT: Final = 120.0  # Hypixel moves players off a restarting server about 60 s after announcing it
 AFK_NUDGE_INTERVAL: Final = 300.0  # Hypixel moves players to a lobby after ~15 min without movement
 
 # --- Bazaar limits ---
@@ -78,8 +79,8 @@ PENDING: Final = re.compile(r"^\[Bazaar\] (Putting goods in escrow|Submitting|Ex
 
 ORDER_COOLDOWN: Final = re.compile(r"^\[Bazaar\] Placing orders is on cooldown")
 DAILY_LIMIT: Final = re.compile(r"^\[Bazaar\] You reached the daily limit")
-CANNOT_AFFORD: Final = re.compile(r"^\[Bazaar\] You cannot afford this!")
-NO_SPACE: Final = re.compile(r"^\[Bazaar\] You don't have the space required")
+CANNOT_AFFORD: Final = re.compile(r"^\[Bazaar\] You cannot afford this")
+NO_SPACE: Final = re.compile(r"^\[Bazaar\] You don't have (the|enough inventory) space")
 NOTHING_TO_CLAIM: Final = re.compile(r"^\[Bazaar\] There is nothing to claim!")
 
 LIMBO: Final = re.compile(r"^You were spawned in Limbo\.")

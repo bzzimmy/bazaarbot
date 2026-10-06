@@ -42,6 +42,8 @@ def _action(method):
                 return await method(self, *args, **kwargs)
             except TimeoutError as e:
                 raise BazaarError(await self._why_no_response(method.__name__)) from e
+            except LookupError as e:  # a button we expected isn't there: Hypixel showed something else
+                raise BazaarError(f"{method.__name__}: {e}") from e
             finally:
                 await self.bridge.close_screen()
 
@@ -98,7 +100,7 @@ class Bazaar:
     async def instant_buy(self, product: str, amount: int) -> Receipt:
         page = await self._open_product(product)
         menu = await self.gui.open(self.gui.click(page, "Buy Instantly"))
-        confirm = await self._sign(self.gui.click(menu, "Custom Amount"), amount)
+        confirm = await self._amount(menu, amount)
         return await self._confirm(self.gui.click(confirm, "Custom Amount"), c.BOUGHT, reopens=True)
 
     @_action
@@ -124,11 +126,9 @@ class Bazaar:
         await self.wait_for_placement()
         page = await self._open_product(product)
         menu = await self.gui.open(self.gui.click(page, "Create Buy Order"))
-        menu = await self._sign(self.gui.click(menu, "Custom Amount"), amount)
+        menu = await self._amount(menu, amount)
         confirm = await self._sign(self.gui.click(menu, "Custom Price"), f"{price:.1f}")
-        receipt = await self._confirm(self.gui.click(confirm, "Buy Order"), c.BUY_ORDER_SETUP)
-        self._placements.append(time.monotonic())
-        return receipt
+        return await self._place(self.gui.click(confirm, "Buy Order"), c.BUY_ORDER_SETUP)
 
     @_action
     async def create_sell_offer(self, product: str, price: float) -> Receipt:
@@ -139,9 +139,7 @@ class Bazaar:
             raise BazaarError(f"no {product} in inventory")
         menu = await self.gui.open(self.gui.click(page, "Create Sell Offer"))
         confirm = await self._sign(self.gui.click(menu, "Custom Price"), f"{price:.1f}")
-        receipt = await self._confirm(self.gui.click(confirm, "Sell Offer"), c.SELL_OFFER_SETUP)
-        self._placements.append(time.monotonic())
-        return receipt
+        return await self._place(self.gui.click(confirm, "Sell Offer"), c.SELL_OFFER_SETUP)
 
     @_action
     async def claim(self, order: Order) -> Receipt:
@@ -200,6 +198,8 @@ class Bazaar:
 
     async def _ready(self) -> None:
         """Be in SkyBlock with a Booster Cookie, and turn the head now and then so Hypixel doesn't see us as AFK."""
+        if self.state.restarting:
+            await self._wait_for_restart()
         if not await self.state.wait_for_skyblock(c.SKYBLOCK_CHECK_TIMEOUT):
             await self._rejoin()
         if self.state.cookie_active is False:
@@ -218,10 +218,19 @@ class Bazaar:
             return f"{action}: Hypixel asks to confirm a price far from the 7-day average ({reason.strip()})"
         return f"{action}: no response from Hypixel"
 
+    async def _wait_for_restart(self) -> None:
+        """Hypixel refuses commands on a server about to restart, then moves everyone off it."""
+        log.info("server restart announced, waiting to be moved")
+        try:
+            await asyncio.wait_for(self._expect_profile(), c.RESTART_TIMEOUT)
+        except TimeoutError:
+            raise BazaarError("server restart announced, but Hypixel didn't move us") from None
+        finally:
+            self.state.restarting = False
+        await asyncio.sleep(c.JOIN_COMMAND_DELAY)
+
     async def _rejoin(self) -> None:
-        loaded = self.bridge.expect(
-            lambda e: e["type"].endswith("system_chat") and bool(c.PROFILE_LOADED.search(parsing.plain(e["data"]["content"]["text"])))
-        )
+        loaded = self._expect_profile()
         for command in ["lobby", "play sb"] if self.state.in_limbo else ["play sb"]:
             changed = self.bridge.expect(lambda e: e["type"].endswith(("respawn", "login")))
             await self.bridge.command(command)
@@ -230,6 +239,12 @@ class Bazaar:
         if not self.state.in_skyblock:
             raise BazaarError("could not get back into SkyBlock")
         await asyncio.sleep(c.JOIN_COMMAND_DELAY)
+
+    def _expect_profile(self) -> asyncio.Future:
+        """Resolves when SkyBlock has loaded our profile on a new server."""
+        return self.bridge.expect(
+            lambda e: e["type"].endswith("system_chat") and bool(c.PROFILE_LOADED.search(parsing.plain(e["data"]["content"]["text"])))
+        )
 
     def name(self, product: str) -> str:
         try:
@@ -244,6 +259,9 @@ class Bazaar:
             slot = next((i for i, item in enumerate(screen.items) if item and self._is(item, product)), None)
             if slot is None:
                 raise BazaarError(f"{product} ({name!r}) not found in Bazaar search")
+            prompt = (parsing.lore(screen.items[slot]) or [""])[-1]
+            if not prompt.startswith("Click"):  # locked for this account, e.g. "You haven't analyzed this mutation!"
+                raise BazaarError(f"{product}: {prompt}")
             screen = await self.gui.open(self.gui.click_slot(screen, slot))
         if not self._is(screen.items[13], product):
             raise BazaarError(f"opened {screen.title!r} instead of {product}")
@@ -279,6 +297,24 @@ class Bazaar:
         """Open a sign editor, type `text` on its first line, and return the menu that follows."""
         await self.gui.open_sign(open_editor)
         return await self.gui.open(lambda: self.bridge.sign(str(text)), retry=False)
+
+    async def _amount(self, menu: Screen, amount: int) -> Screen:
+        """Enter a custom amount. Hypixel silently ignores amounts over the maximum, so refuse those up front."""
+        limit = parsing.max_amount(menu.item("Custom Amount"))
+        if limit is not None and amount > limit:
+            raise BazaarError(f"{amount} is more than the {limit} allowed at once")
+        return await self._sign(self.gui.click(menu, "Custom Amount"), amount)
+
+    async def _place(self, action: Action, pattern: re.Pattern) -> Receipt:
+        """Confirm a new order and count it against the placement budget."""
+        try:
+            receipt = await self._confirm(action, pattern)
+        except OrderCooldown:
+            # Orders were placed where we couldn't count them (another process, by hand): treat the budget as spent.
+            self._placements.extend([time.monotonic()] * c.ORDER_PLACEMENTS_PER_WINDOW)
+            raise
+        self._placements.append(time.monotonic())
+        return receipt
 
     async def _confirm(self, action: Action, *patterns: re.Pattern, reopens: bool = False, retry: bool = True) -> Receipt:
         """Run the confirming action and turn Hypixel's reply into a Receipt or an error."""

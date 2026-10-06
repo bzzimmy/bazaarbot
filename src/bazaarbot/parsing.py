@@ -11,6 +11,7 @@ _FORMATTING = re.compile("§.")
 _LEVEL = re.compile(r"^- ([\d,.]+) coins each \| ([\d,]+)x (?:in|from) ([\d,]+) (?:order|offer)s?$")
 _SUFFIXES = {"k": 1e3, "M": 1e6, "B": 1e9}
 _HELD = re.compile(r"^(?:Inventory: ([\d,]+) items?|Your .+: ([\d,]+))$")  # items, or essences ("Your Undead Essence: 7,184")
+_MAX_AMOUNT = re.compile(r"up to ([\d,]+)x")
 
 
 def plain(text: str) -> str:
@@ -85,6 +86,12 @@ def product_page(items: list[dict | None]) -> ProductPage:
         sell_offers=_levels(lore(items[find(items, "Create Sell Offer")])),
         in_inventory=int(number(held.group(1) or held.group(2))) if held else 0,
     )
+
+
+def max_amount(item: dict) -> int | None:
+    """The most a Custom Amount button accepts ("Buy up to 71,680x.")."""
+    match = next((m for line in lore(item) if (m := _MAX_AMOUNT.search(line))), None)
+    return int(number(match.group(1))) if match else None
 
 
 def orders(items: list[dict | None]) -> list[Order]:
