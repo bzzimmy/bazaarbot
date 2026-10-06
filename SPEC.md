@@ -37,7 +37,7 @@ All Bazaar knowledge lives here, so iterating never requires rebuilding the mod.
 - **Game state**: purse, inventory, sacks, open screen and Booster Cookie status, built from the event stream.
 - **Bazaar API**: search and product pages; instant buy and sell; sell inventory and sell sacks; create buy orders and sell offers; list, claim, cancel and flip orders; Bazaar history.
 - **Market data**: the public Hypixel Bazaar API (full order books for every product, refreshed about every 20 s), recorded to `data/market/<date>.jsonl.gz`. It's used for prices; the game client is used for actions and our own orders.
-- **Ledger**: a SQLite record of every trade and purse snapshot, giving profit per strategy.
+- **Ledger**: one SQLite file (`data/ledger.db`) recording every trade with its coin change, grouped into strategy runs with their settings and purse at start and end. A run's profit is the sum of its coin changes, cross-checked against the purse.
 - **Strategies**: one file per strategy, built on a small base class and loaded by a runner.
 - **CLI**: a thin Typer layer over the API for manual use and running strategies.
 

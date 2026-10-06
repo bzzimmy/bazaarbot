@@ -34,6 +34,7 @@ SKYBLOCK_CHECK_TIMEOUT: Final = 6.0  # Hypixel refreshes that sidebar at least e
 REJOIN_TIMEOUT: Final = 30.0
 JOIN_COMMAND_DELAY: Final = 5.0  # commands only work 4 s after the profile loads on a new server
 RESTART_TIMEOUT: Final = 120.0  # Hypixel moves players off a restarting server about 60 s after announcing it
+PURSE_UPDATE_DELAY: Final = 2.0  # the sidebar purse shows a trade about a second after it happens
 AFK_NUDGE_INTERVAL: Final = 300.0  # Hypixel moves players to a lobby after ~15 min without movement
 
 # --- Bazaar limits ---

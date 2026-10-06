@@ -17,6 +17,7 @@ import asyncio
 import importlib.util
 import logging
 import sys
+from contextlib import closing
 from pathlib import Path
 
 import httpx
@@ -24,7 +25,8 @@ import httpx
 from bazaarbot import market as market_api
 from bazaarbot.bazaar import Bazaar
 from bazaarbot.bridge import BridgeError
-from bazaarbot.constants import BAZAAR_API_REFRESH
+from bazaarbot.constants import BAZAAR_API_REFRESH, PURSE_UPDATE_DELAY
+from bazaarbot.ledger import Ledger
 from bazaarbot.models import BazaarError
 
 
@@ -38,6 +40,12 @@ class Strategy:
                 raise TypeError(f"{type(self).__name__} has no setting {key!r}")
             setattr(self, key, value)
         self.log = logging.getLogger(type(self).__name__)
+
+    @property
+    def settings(self) -> dict[str, object]:
+        """Every setting and its value: the class attributes of the strategy and its bases."""
+        names = {name for cls in type(self).__mro__ for name, value in vars(cls).items() if not name.startswith("_") and not callable(value)}
+        return {name: getattr(self, name) for name in sorted(names - {"settings"})}
 
     async def start(self, bz: Bazaar) -> None:
         """Called once before the first tick."""
@@ -61,13 +69,17 @@ def load(path: str | Path, **settings: object) -> Strategy:
     return found[0](**settings)
 
 
-async def run(strategy: Strategy) -> None:
-    """Run a strategy for its duration or until cancelled. A failed tick is logged and the next one runs as normal."""
+async def run(strategy: Strategy, ledger: Ledger) -> None:
+    """Run a strategy for its duration or until cancelled, recording it as a run in the ledger.
+
+    A failed tick is logged and the next one runs as normal.
+    """
     log = strategy.log
     loop = asyncio.get_running_loop()
     end = loop.time() + strategy.duration if strategy.duration else float("inf")
-    async with Bazaar() as bz:
+    async with Bazaar(ledger=ledger) as bz:
         await strategy.start(bz)
+        run_id = ledger.start_run(type(strategy).__name__, strategy.settings, bz.state.purse)
         try:
             while loop.time() < end:
                 started = loop.time()
@@ -78,7 +90,22 @@ async def run(strategy: Strategy) -> None:
                 await asyncio.sleep(max(0.0, min(started + strategy.interval, end) - loop.time()))
             log.info("duration reached, stopping")
         finally:
-            await strategy.stop(bz)
+            try:
+                await strategy.stop(bz)
+            finally:
+                await asyncio.sleep(PURSE_UPDATE_DELAY)
+                ledger.end_run(bz.state.purse)
+                _log_summary(log, ledger.summary(run_id))
+
+
+def _log_summary(log: logging.Logger, summary: dict) -> None:
+    purse = "unknown" if summary["purse_change"] is None else f"{summary['purse_change']:+,.0f}"
+    log.info(
+        f"run done: profit {summary['profit']:+,.0f} coins in {summary['minutes']:.1f} min "
+        f"over {summary['trades']} trades (purse change {purse})"
+    )
+    for product, coins in summary["products"].items():
+        log.info(f"  {product} {coins:+,.0f}")
 
 
 def main() -> None:
@@ -94,6 +121,7 @@ def main() -> None:
         except (ValueError, SyntaxError):
             settings[key] = value  # plain strings don't need quotes
     try:
-        asyncio.run(run(load(path, **settings)))
+        with closing(Ledger()) as ledger:
+            asyncio.run(run(load(path, **settings), ledger))
     except KeyboardInterrupt:
         pass

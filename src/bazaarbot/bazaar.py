@@ -7,6 +7,7 @@
 Products are Hypixel API IDs. Actions run one at a time (there's a single GUI), each leaves no menu open,
 and the measured rate limits are respected automatically: placing an order waits for a free slot.
 Before each action the player is brought back into SkyBlock if Hypixel moved it (kick, Limbo, AFK).
+With a Ledger, every receipt is recorded to it.
 """
 
 import asyncio
@@ -22,6 +23,7 @@ from bazaarbot import constants as c
 from bazaarbot import market, parsing
 from bazaarbot.bridge import DEFAULT_URL, Bridge
 from bazaarbot.gui import Action, Gui, Screen
+from bazaarbot.ledger import Ledger
 from bazaarbot.models import BazaarError, CannotAfford, DailyLimit, NoSpace, Order, OrderCooldown, ProductPage, Receipt
 from bazaarbot.state import GameState
 
@@ -32,30 +34,34 @@ log = logging.getLogger("bazaarbot")
 
 
 def _action(method):
-    """Run one Bazaar action at a time, from inside SkyBlock, and always leave the menu closed."""
+    """Run one Bazaar action at a time, from inside SkyBlock, always leave the menu closed, and record receipts."""
 
     @functools.wraps(method)
     async def run(self: Bazaar, *args, **kwargs):
         async with self._lock:
             await self._ready()
             try:
-                return await method(self, *args, **kwargs)
+                result = await method(self, *args, **kwargs)
             except TimeoutError as e:
                 raise BazaarError(await self._why_no_response(method.__name__)) from e
             except LookupError as e:  # a button we expected isn't there: Hypixel showed something else
                 raise BazaarError(f"{method.__name__}: {e}") from e
             finally:
                 await self.bridge.close_screen()
+            self._record(method.__name__, args, result)
+            return result
 
     return run
 
 
 class Bazaar:
-    def __init__(self, url: str = DEFAULT_URL) -> None:
+    def __init__(self, url: str = DEFAULT_URL, ledger: Ledger | None = None) -> None:
         self.bridge = Bridge(url)
+        self.ledger = ledger
         self.gui = Gui(self.bridge)
         self.state = GameState(self.bridge)
         self.names: dict[str, str] = {}
+        self._ids: dict[str, str] = {}  # loosely compared display name -> product, for items without an ID
         self._lock = asyncio.Lock()
         self._placements: deque[float] = deque(maxlen=c.ORDER_PLACEMENTS_PER_WINDOW)
         self._last_manage = 0.0
@@ -64,6 +70,7 @@ class Bazaar:
 
     async def __aenter__(self) -> Bazaar:
         self.names = await market.product_names()
+        self._ids = {parsing.alnum(name): product for product, name in self.names.items()}
         await self.bridge.connect()
         self.state.sync(await self.bridge.snapshot())
         return self
@@ -240,6 +247,21 @@ class Bazaar:
             raise BazaarError("could not get back into SkyBlock")
         await asyncio.sleep(c.JOIN_COMMAND_DELAY)
 
+    def _record(self, action: str, args: tuple, result: object) -> None:
+        """Record the receipts an action returned, under the product it acted on."""
+        if not self.ledger:
+            return
+        target = args[0] if args else None
+        for receipt in result if isinstance(result, list) else [result]:
+            if isinstance(receipt, Receipt):
+                if isinstance(target, Order):
+                    product = target.product
+                elif isinstance(target, str):
+                    product = target
+                else:  # selling the whole inventory or sacks: only the display name is known
+                    product = self._ids.get(parsing.alnum(receipt.product or ""))
+                self.ledger.record(action, product, receipt)
+
     def _expect_profile(self) -> asyncio.Future:
         """Resolves when SkyBlock has loaded our profile on a new server."""
         return self.bridge.expect(
@@ -275,8 +297,7 @@ class Bazaar:
 
     def _orders(self, menu: Screen) -> list[Order]:
         """Orders in a Manage Orders menu. Items without an ID (enchantments, shards...) are identified by name."""
-        by_name = {parsing.alnum(name): product for product, name in self.names.items()}
-        return [o if o.product else replace(o, product=by_name.get(parsing.alnum(o.name))) for o in parsing.orders(menu.items)]
+        return [o if o.product else replace(o, product=self._ids.get(parsing.alnum(o.name))) for o in parsing.orders(menu.items)]
 
     async def _bz(self, query: str = "") -> Screen:
         """Open the Bazaar, optionally searching. Commands aren't re-sent: Hypixel answers them, just slowly at times."""
